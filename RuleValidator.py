@@ -11,6 +11,8 @@ class Rule:
     def __init__(self):
         pass
     # Setters
+    def setDirective(self, directive):
+        self.directive = directive
     def setTargets(self, targets):
         self.targets = targets
     def setActions(self, actions):
@@ -81,13 +83,8 @@ class Validator:
                     print "Error: An unknown transformation was specified"
                     sys.exit(1)
         return 1
-    def validate(self,targetSplit,argSplit,actionSplit,RuleString):
-        
-       
+    def validateIfChained(self,targetSplit,argSplit,actionSplit,RuleString):
         pass
-        # First word should be SecRule
-        # The term 'SecRule' is actually case insensative
-
         # Must have actionID
         # If Chained::
             # Must not specify disruptive action
@@ -112,7 +109,7 @@ class Validator:
           #      if(firstAction != "chain" and firstAction != "id"):
           #          print "Failed BP02: Rule must begin with chain or ID"
                         
-        # Must specify ID
+        
         # No author tag
         # Must Specify phase
         # Must Specify atleast one transform
@@ -224,9 +221,11 @@ class Validator:
         # Todo: Some rules don't require all
         except IndexError:
             print "Error: A rule was detected that was missing data"
-            
-        self.validateDirective(directive)
         rule = Rule()
+        
+        rule.setDirective(directive)
+        self.validateDirective(directive)
+
    
         # Follow same logic as ModSec
         targetSplit = self.parse_generic(targets)
@@ -258,7 +257,14 @@ class Validator:
         
         self.validateActions(rule)
         
-        
+        # Make sure we have an ID
+        foundID = False
+        for act in rule.getActions():
+            if(act.split(':')[0] == "id"):
+                foundID = True
+        if foundID == False:
+            print "The rule is missing an ID"
+            sys.exit(1)
         
 
 def main():
