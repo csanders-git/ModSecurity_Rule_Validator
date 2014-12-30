@@ -23,6 +23,9 @@ class Rule:
         self.op_param = op_param
     def setOpNegate(self,op_negate):
         self.op_negate = op_negate
+    def setChain(self,chain):
+        self.chain = chain
+        
     # Getters
     def getTargets(self):
         return self.targets
@@ -32,6 +35,8 @@ class Rule:
         return self.op_name
     def getOpParam(self):
         return self.op_param
+    def getChain(self):
+        return self.chain
 # Rule validator
 class Validator:
 
@@ -68,8 +73,8 @@ class Validator:
     def validateArgs(self,rule):
         if(rule.getOpName() not in self.operatorOptions):
             # Custom name we assigned in this program (so we can do BP checking
-            if(rule.getOpName !=  "Impliedrx"):
-                print "Error an unknown operator was specified"
+            if(rule.getOpName() !=  "Impliedrx"):
+                print "Error an unknown Argument was specified"
                 
                 
     def validateActions(self,rule):
@@ -82,6 +87,8 @@ class Validator:
                 if action[1] not in self.transformOptions:
                     print "Error: An unknown transformation was specified"
                     sys.exit(1)
+            if action[0] == "chain":
+                rule.setChain(True)
         return 1
     def validateIfChained(self,targetSplit,argSplit,actionSplit,RuleString):
         pass
@@ -109,7 +116,7 @@ class Validator:
           #      if(firstAction != "chain" and firstAction != "id"):
           #          print "Failed BP02: Rule must begin with chain or ID"
                         
-        
+        # Spacing checks we are gonna need the RAW STRING
         # No author tag
         # Must Specify phase
         # Must Specify atleast one transform
@@ -194,7 +201,7 @@ class Validator:
             p+=1
             while(RuleString[p] == ' ' and p != len(RuleString)):
                 p+=1
-         # Is there an explicit operator
+        # Is there an explicit operator
         if(RuleString[p] != '@'):
             # This is implicity regex
             rule.setOpName("Impliedrx")
@@ -208,19 +215,54 @@ class Validator:
             while(RuleString[p] == ' '):
                 p+=1
             rule.setOpParam(RuleString[p:])
+    
+    def readConf(self, filename):
+        os.path.isfile(filename)
+        rules = []
+        f = open(filename,'rb')
+        rule = ""
+        appendNext = False
+        for line in f.readlines():
+            if line.lstrip().lower()[0:7] == "secrule" or appendNext == True:
+                if(appendNext):
+                    rules[-1] = rules[-1] + line
+                else:
+                    rules.append(line)
+                if line.rstrip()[-1] == "\\":
+                    appendNext = True
+                else:
+                    appendNext = False
 
-    def parseRule(self,RuleString):
+        return rules    
+        
+    def parseRule(self,RuleString, previousRule):
+        lineCheck = RuleString.rstrip().split('\n')
+        if(len(lineCheck) > 1):
+            RuleString = ""
+            trimNext = False
+            for line in lineCheck:
+                if(trimNext == True):
+                    line = line.lstrip()
+                if(line.rstrip()[-1] == "\\"):
+                    RuleString += line.rstrip()[:-1] 
+                    trimNext = True
+                else:
+                    RuleString += line
+        print RuleString
+
         # To-Do find where this is in Apache and mirror it
         rule = shlex.split(RuleString)
         try:
-            directive = rule[0]
-            
+            directive = rule[0]     
             targets = rule[1]
             args = rule[2]
+        except IndexError:
+            print "Error: A rule was detected that was missing data"
+        try:
             actions = rule[3]
         # Todo: Some rules don't require all
         except IndexError:
-            print "Error: A rule was detected that was missing data"
+            actions = None
         rule = Rule()
         
         rule.setDirective(directive)
@@ -244,28 +286,34 @@ class Validator:
       
         self.validateArgs(rule)
         
-        actionSplit = self.parse_generic(actions)
-        tempActions = []
-        if(actionSplit != -1):            
-            for i in range(0,len(actionSplit)):
-                if(i != len(actionSplit)-1):
-                    tempAction = actions[actionSplit[i]:actionSplit[i+1]]
-                    if(tempAction[0] == ','):
-                        tempAction = tempAction[1:]
-                    tempActions.append(tempAction)
-        rule.setActions(tempActions)
+        # Only undertake an action if it is there and we are not in a chain
+        if(previousRule != ""):
+             if( not previousRule.getChain and action != None):
+                actionSplit = self.parse_generic(actions)
+                tempActions = []
+                if(actionSplit != -1):            
+                    for i in range(0,len(actionSplit)):
+                        if(i != len(actionSplit)-1):
+                            tempAction = actions[actionSplit[i]:actionSplit[i+1]]
+                            if(tempAction[0] == ','):
+                                tempAction = tempAction[1:]
+                            tempActions.append(tempAction)
+                rule.setActions(tempActions)
+                
+                self.validateActions(rule)
         
-        self.validateActions(rule)
-        
-        # Make sure we have an ID
-        foundID = False
-        for act in rule.getActions():
-            if(act.split(':')[0] == "id"):
-                foundID = True
-        if foundID == False:
-            print "The rule is missing an ID"
-            sys.exit(1)
-        
+        if(previousRule != ""):
+            if( not previousRule.getChain):
+                # Make sure we have an ID
+                foundID = False
+                for act in rule.getActions():
+                    if(act.split(':')[0] == "id"):
+                        foundID = True
+                if foundID == False:
+                    print "The rule is missing an ID"
+                    sys.exit(1)
+        return rule
+        # Validate chain
 
 def main():
     example = """SecRule REQUEST_METHOD "@streq POST" "chain,phase:2,t:none,log,block,id:'2100000',msg:'SLR: Possible Elevation of Privilege Attack against .Net.',tag:'http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2011-3416',tag:'http://technet.microsoft.com/en-us/security/bulletin/ms11-100'"
@@ -280,12 +328,22 @@ def main():
     
     example5 = """SecRule REQUEST_METHOD:Host|REQUEST_METHOD:Bob "@streq POST" "chain,phase:2,t:none,log,block,id:'2100000',msg:'SLR: Possible Elevation of Privilege Attack against .Net.',tag:'http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2011-3416',tag:'http://technet.microsoft.com/en-us/security/bulletin/ms11-100'" """
     
+    example6 = """
+    SecRule REQUEST_LINE "^GET /$" "chain,phase:2,id:'981020',t:none,pass,nolog"
+        SecRule REMOTE_ADDR "^(127\.0\.0\.|\:\:)1$" "chain,t:none"
+                SecRule TX:'/PROTOCOL_VIOLATION\\\/MISSING_HEADER/' ".*" "chain,setvar:tx.missing_header=+1,setvar:tx.missing_header_%{tx.missing_header}=%{matched_var_name}"
+                        SecRule TX:'/MISSING_HEADER_/' "TX\:(.*)" "capture,t:none,setvar:!tx.%{tx.1}"
+    """
+    
     #example2 = """SecRule REQUEST_METHOD:Host|REQUEST_METHOD:Bob "@streq POST" "chain,phase:2,t:none,log,block,id:'2100000',msg:'SLR: Possible Elevation of Privilege Attack against .Net.',tag:'http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2011-3416',tag:'http://technet.microsoft.com/en-us/security/bulletin/ms11-100'"
 #"""
 #    example3 = """SecRule REQUEST_METHOD:Host "@streq POST" "chain,phase:2,t:none,log,block,id:'2100000',msg:'SLR: Possible Elevation of Privilege Attack against .Net.',tag:'http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2011-3416',tag:'http://technet.microsoft.com/en-us/security/bulletin/ms11-100'"
 #"""
     MyValidator = Validator(2.8)
-    MyValidator.parseRule(example5)
+    rules = MyValidator.readConf("modsecurity_crs_59_outbound_blocking.conf")
+    previousRule = ""
+    for rule in rules:
+        previousRule = MyValidator.parseRule(rule,previousRule)
 
     
 if __name__ == '__main__':
