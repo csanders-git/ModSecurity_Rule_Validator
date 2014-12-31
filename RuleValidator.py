@@ -128,7 +128,7 @@ class Validator:
                 print "Failed BP02: If 'chain' is present it should be the first action"
         for act in range(0,len(rule.getActions())):
             action = rule.getActions()[act].split(':')
-            if(action[0] == "id" and act != 0 or act != 1):
+            if(action[0] == "id" and (act != 0 or act != 1)):
                 print "Failed BP03: The 'id' action must be the first action or follow 'chain'"
             hasHit = False
             try:
@@ -158,13 +158,13 @@ class Validator:
                 if(act[1] != "none"):
                     print "Failed BP07: Each rule should start with t:none"
                 break
+        # Must specify regex is @rx
+        if rule.getOpName() == "Impliedrx":
+            print "Failed BP08: @rx should always be placed, not assumed"
         # Spacing checks we are gonna need the RAW STRING
         # We need to check that there are valid options for phase etc
         # No author tag
-        # Always start by specifying t:none
-        # Must not specify t:none if another transform is specified
         # Must be quoted ( Which phases?)
-        # Must specify regex is @rx
         # Use @streq and @pm to avoid regex
         pass
     def parse_generic(self,RuleString,currentOffset=0):
@@ -304,7 +304,7 @@ class Validator:
         # Todo: Some rules don't require all
         except IndexError:
             actions = None
-        print RuleString
+        #print RuleString
         rule = Rule()
         
         rule.setDirective(directive)
@@ -340,9 +340,9 @@ class Validator:
                         if(tempAction[0] == ','):
                             tempAction = tempAction[1:]
                         tempActions.append(tempAction)
-            rule.setActions(tempActions)
-            
+            rule.setActions(tempActions)     
             self.validateActions(rule)
+
         if previousRule != None:
             if( not previousRule.getChain() ):
                 # Make sure we have an ID
@@ -359,6 +359,8 @@ class Validator:
                 self.validateIfChained(rule)
         if(previousRule == None or previousRule.getChain() == False):
             self.validateBP(rule)
+        else:
+            print RuleString
         return rule
         # Validate chain
 
