@@ -9,6 +9,7 @@ import cgi
 import shlex # We are lazy
 class Rule:
     def __init__(self):
+        self.chain = False
         pass
     # Setters
     def setDirective(self, directive):
@@ -65,9 +66,12 @@ class Validator:
     def validateTargets(self,rule):
         for target in rule.getTargets():
             target = target.split(':')
+            if target[0][0] == '!':
+                    target[0] = target[0][1:]
             if target[0] not in self.targetOptions:
                 print "Error: An unknown target was specified"
-                sys.exit(1)
+                #print target[0]
+                #sys.exit(1)
         return 1
      
     def validateArgs(self,rule):
@@ -90,15 +94,28 @@ class Validator:
             if action[0] == "chain":
                 rule.setChain(True)
         return 1
-    def validateIfChained(self,targetSplit,argSplit,actionSplit,RuleString):
-        pass
-        # Must have actionID
-        # If Chained::
-            # Must not specify disruptive action
-            # Must not specify skip after
-            # Must not specify phase
+    def validateIfChained(self,rule):
+        # Must not specify disruptive action
+        disruptive = ["allow","block","deny","drop","pass","pause","proxy","redirect"]
+        metadata = ["id","rev","msg","severity","version","accuracy","maturity","logdata"]
+        for act in rule.getActions():
+            act = act.split(':')
+            # Chains must not have phases
+            if act[0] == "phase":
+                print "Error: phases cannot be declared in chained rule"
+                sys.exit(1)
             # Must not spec id,rev,msg,sev,version,accuracy,maturity,logdata
+            if act[0] in metadata:
+                print "Error: chained rules may not contain metadata actions"
+                sys.exit(1)
             # Must not specify skip
+            if act[0] == "skip":
+                print "Error: Chained rules may not contain 'skip'"
+                sys.exit(1)
+            # Chains must not contain disruptive actions
+            if act[0] in disruptive:
+                print "Error: Chained rules may not contain disruptive actions"
+                sys.exit(1)
     def validateBP(self,targetSplit,argSplit,actionSplit,RuleString):
         # To-Do find where this is in Apache and mirror it
         rule = shlex.split(RuleString)
@@ -248,7 +265,7 @@ class Validator:
                     trimNext = True
                 else:
                     RuleString += line
-        print RuleString
+        #print RuleString
 
         # To-Do find where this is in Apache and mirror it
         rule = shlex.split(RuleString)
@@ -263,6 +280,7 @@ class Validator:
         # Todo: Some rules don't require all
         except IndexError:
             actions = None
+        print RuleString
         rule = Rule()
         
         rule.setDirective(directive)
@@ -287,23 +305,22 @@ class Validator:
         self.validateArgs(rule)
         
         # Only undertake an action if it is there and we are not in a chain
-        if(previousRule != ""):
-             if( not previousRule.getChain and action != None):
-                actionSplit = self.parse_generic(actions)
-                tempActions = []
-                if(actionSplit != -1):            
-                    for i in range(0,len(actionSplit)):
-                        if(i != len(actionSplit)-1):
-                            tempAction = actions[actionSplit[i]:actionSplit[i+1]]
-                            if(tempAction[0] == ','):
-                                tempAction = tempAction[1:]
-                            tempActions.append(tempAction)
-                rule.setActions(tempActions)
-                
-                self.validateActions(rule)
-        
-        if(previousRule != ""):
-            if( not previousRule.getChain):
+       # if(previousRule != None):
+        if(actions != None):
+            actionSplit = self.parse_generic(actions)
+            tempActions = []
+            if(actionSplit != -1):            
+                for i in range(0,len(actionSplit)):
+                    if(i != len(actionSplit)-1):
+                        tempAction = actions[actionSplit[i]:actionSplit[i+1]]
+                        if(tempAction[0] == ','):
+                            tempAction = tempAction[1:]
+                        tempActions.append(tempAction)
+            rule.setActions(tempActions)
+            
+            self.validateActions(rule)
+        if previousRule != None:
+            if( not previousRule.getChain() ):
                 # Make sure we have an ID
                 foundID = False
                 for act in rule.getActions():
@@ -312,6 +329,10 @@ class Validator:
                 if foundID == False:
                     print "The rule is missing an ID"
                     sys.exit(1)
+        # If there is a previous rule and it was a chain... we must validate chained logic
+        if previousRule != None:
+            if(previousRule.getChain()):
+                self.validateIfChained(rule)
         return rule
         # Validate chain
 
@@ -340,8 +361,8 @@ def main():
 #    example3 = """SecRule REQUEST_METHOD:Host "@streq POST" "chain,phase:2,t:none,log,block,id:'2100000',msg:'SLR: Possible Elevation of Privilege Attack against .Net.',tag:'http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2011-3416',tag:'http://technet.microsoft.com/en-us/security/bulletin/ms11-100'"
 #"""
     MyValidator = Validator(2.8)
-    rules = MyValidator.readConf("modsecurity_crs_59_outbound_blocking.conf")
-    previousRule = ""
+    rules = MyValidator.readConf("modsecurity_crs_47_common_exceptions.conf")
+    previousRule = None
     for rule in rules:
         previousRule = MyValidator.parseRule(rule,previousRule)
 
