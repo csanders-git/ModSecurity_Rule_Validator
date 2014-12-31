@@ -28,6 +28,8 @@ class Rule:
         self.chain = chain
         
     # Getters
+    def getDirective(self):
+        return self.directive
     def getTargets(self):
         return self.targets
     def getActions(self):
@@ -116,27 +118,49 @@ class Validator:
             if act[0] in disruptive:
                 print "Error: Chained rules may not contain disruptive actions"
                 sys.exit(1)
-    def validateBP(self,targetSplit,argSplit,actionSplit,RuleString):
-        # To-Do find where this is in Apache and mirror it
-        rule = shlex.split(RuleString)
-        directive = rule[0]
-        targets = rule[1]
-        args = rule[2]
-        actions = rule[3]
-        if(directive != "SecRule"):
+    def validateBP(self,rule):
+        if(rule.getDirective() != "SecRule"):
             print "Failed BP01: Directive must be camel case"
 
-            #print action
-            # We prefer chain,id'123',phase:2, etc.
-          #  if(i == 0):
-          #      firstAction = action.split(":")[0]
-          #      if(firstAction != "chain" and firstAction != "id"):
-          #          print "Failed BP02: Rule must begin with chain or ID"
-                        
+        # We prefer chain,id'123',phase:2, etc.
+        if("chain" in rule.getActions()):
+            if rule.getActions()[0] != "chain":
+                print "Failed BP02: If 'chain' is present it should be the first action"
+        for act in range(0,len(rule.getActions())):
+            action = rule.getActions()[act].split(':')
+            if(action[0] == "id" and act != 0 or act != 1):
+                print "Failed BP03: The 'id' action must be the first action or follow 'chain'"
+            hasHit = False
+            try:
+                if(action[0] == "phase" and rule.getActions[act -1].split(':')[0] != "id"):
+                    hasHit = True
+            except:
+                    hasHit = True
+            if hasHit == True:
+                print "Failed BP04: the 'phase' action must follow the id"
+        # Rule must specify phase and transform
+        foundPhase = False
+        foundTransform = False
+        for act in rule.getActions():
+            act = act.split(':')[0]
+            if act == "phase":
+                foundPhase = True
+            if act == "t":
+                foundTransform = True
+        if foundPhase == False:
+            print "Failed BP05: Each rule should specify a phase"
+        if foundTransform == False:
+            print "Failed BP06: Each rule should specify a transformation"
+        # Check to make sure that t:none is specified first
+        for act in rule.getActions():
+            act = act.split(':')
+            if act[0] == "t":
+                if(act[1] != "none"):
+                    print "Failed BP07: Each rule should start with t:none"
+                break
         # Spacing checks we are gonna need the RAW STRING
+        # We need to check that there are valid options for phase etc
         # No author tag
-        # Must Specify phase
-        # Must Specify atleast one transform
         # Always start by specifying t:none
         # Must not specify t:none if another transform is specified
         # Must be quoted ( Which phases?)
@@ -333,6 +357,8 @@ class Validator:
         if previousRule != None:
             if(previousRule.getChain()):
                 self.validateIfChained(rule)
+        if(previousRule == None or previousRule.getChain() == False):
+            self.validateBP(rule)
         return rule
         # Validate chain
 
